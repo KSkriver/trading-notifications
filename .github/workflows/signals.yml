@@ -27,7 +27,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          TICKERS: 'SMH,SPMO'
+          TICKERS: 'SMH,SPMO,QQQ,SPY'
         run: python notifier/signals.py
 
       - name: Commit updated state
