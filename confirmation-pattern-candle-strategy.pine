@@ -1,0 +1,74 @@
+//@version=6
+strategy("Confirmation Candle Patterns Strategy",
+     overlay=true,
+     initial_capital=10000,
+     default_qty_type=strategy.percent_of_equity,
+     default_qty_value=10,
+     commission_type=strategy.commission.percent,
+     commission_value=0.05,
+     process_orders_on_close=true)
+
+// --- INPUTS ---
+useMacdFilter = input.bool(true, "MACD histogram bekræftelse")
+macdFast      = input.int(12,    "MACD fast length",   minval=1)
+macdSlow      = input.int(26,    "MACD slow length",   minval=1)
+macdSignal    = input.int(9,     "MACD signal length", minval=1)
+tradeMode     = input.string("Long & Short", "Trade mode", options=["Long & Short", "Long only", "Short only"])
+
+// Hjælpefunktioner til stearinlys
+isBullish(index) => close[index] > open[index]
+isBearish(index) => close[index] < open[index]
+isDoji(index)    => math.abs(close[index] - open[index]) <= (high[index] - low[index]) * 0.1
+
+// Body / wick helpers
+body(index)      => math.abs(close[index] - open[index])
+upperWick(index) => high[index] - math.max(open[index], close[index])
+lowerWick(index) => math.min(open[index], close[index]) - low[index]
+range_(index)    => high[index] - low[index]
+
+// --- 2-CANDLE PATTERNS ---
+bullishEngulfing = isBearish(1) and isBullish(0) and close[0] > open[1] and open[0] <= close[1]
+bearishEngulfing = isBullish(1) and isBearish(0) and close[0] < open[1] and open[0] >= close[1]
+
+// --- SINGLE CANDLE REVERSALS ---
+hammer       = body(0) <= range_(0) * 0.3 and lowerWick(0) >= body(0) * 2 and upperWick(0) <= body(0)
+shootingStar = body(0) <= range_(0) * 0.3 and upperWick(0) >= body(0) * 2 and lowerWick(0) <= body(0)
+
+// --- 3-CANDLE PATTERNS ---
+bullishStar = isBearish(2) and isDoji(1) and isBullish(0) and close[0] > (open[2] + close[2]) / 2
+bearishStar = isBullish(2) and isDoji(1) and isBearish(0) and close[0] < (open[2] + close[2]) / 2
+
+// --- MACD FILTER ---
+[macdLine, signalLine, macdHist] = ta.macd(close, macdFast, macdSlow, macdSignal)
+macdBuyOK  = not useMacdFilter or macdHist < 0
+macdSellOK = not useMacdFilter or macdHist > 0
+
+// --- SIGNALER ---
+buySignal  = (bullishEngulfing or bullishStar or hammer)       and macdBuyOK
+sellSignal = (bearishEngulfing or bearishStar or shootingStar) and macdSellOK
+
+// --- EXECUTION ---
+// strategy.entry lukker automatisk modsat position ved reverse.
+allowLong  = tradeMode == "Long & Short" or tradeMode == "Long only"
+allowShort = tradeMode == "Long & Short" or tradeMode == "Short only"
+
+if buySignal and allowLong
+    strategy.entry("Long", strategy.long)
+
+if sellSignal and allowShort
+    strategy.entry("Short", strategy.short)
+
+// Ved Long only: brug SELL signal til at lukke long
+if sellSignal and tradeMode == "Long only"
+    strategy.close("Long")
+
+// Ved Short only: brug BUY signal til at lukke short
+if buySignal and tradeMode == "Short only"
+    strategy.close("Short")
+
+// --- LABELS (samme som indicator) ---
+if buySignal
+    label.new(bar_index, low,  text="BUY\n"  + str.tostring(close, "#.##"), style=label.style_label_up,   color=color.green, textcolor=color.white, size=size.small)
+
+if sellSignal
+    label.new(bar_index, high, text="SELL\n" + str.tostring(close, "#.##"), style=label.style_label_down, color=color.red,   textcolor=color.white, size=size.small)

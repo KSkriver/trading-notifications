@@ -1,0 +1,38 @@
+name: Trading Signals
+
+on:
+  schedule:
+    # Every 2 hours. Catches new 4h bars close soon after they form.
+    - cron: '15 */2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: notifier/requirements.txt
+
+      - run: pip install -r notifier/requirements.txt
+
+      - name: Run signal check
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TICKERS: 'SMH,SPMO'
+        run: python notifier/signals.py
+
+      - name: Commit updated state
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add notifier/state.json
+          git diff --cached --quiet || (git commit -m "chore: update signal state" && git push)

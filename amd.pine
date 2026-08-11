@@ -1,0 +1,107 @@
+//@version=6
+indicator("Smart Money Concepts - AMD & FVG [v6]", overlay=true, max_boxes_count=500)
+
+// ==========================================
+// INDSTILLINGER & FARVER
+// ==========================================
+grp_amd = "AMD (Power of 3) Sessioner"
+showAMD  = input.bool(true, "Vis AMD Bokse", group=grp_amd)
+sessAcc  = input.session("0000-0800:1234567", "Akkumulering (Asien)", group=grp_amd)
+sessMan  = input.session("0800-1200:1234567", "Manipulation (London)", group=grp_amd)
+sessDis  = input.session("1200-2000:1234567", "Distribution (New York)", group=grp_amd)
+
+colAcc = input.color(color.new(color.blue, 85), "Akkumulering Farve", group=grp_amd)
+colMan = input.color(color.new(color.orange, 85), "Manipulation Farve", group=grp_amd)
+colDis = input.color(color.new(color.purple, 85), "Distribution Farve", group=grp_amd)
+
+grp_fvg = "Fair Value Gaps (FVG)"
+showFVG     = input.bool(true, "Vis Fair Value Gaps", group=grp_fvg)
+maxFVG      = input.int(20, "Max antal FVGs", minval=5, maxval=200, group=grp_fvg)
+maxFVGAge   = input.int(100, "FVG maks. alder (bars)", minval=10, maxval=1000, group=grp_fvg)
+colBullFVG  = input.color(color.new(color.green, 80), "Bullish FVG Farve", group=grp_fvg)
+colBearFVG  = input.color(color.new(color.red, 80), "Bearish FVG Farve", group=grp_fvg)
+
+// ==========================================
+// FAIR VALUE GAPS (FVG) LOGIK
+// ==========================================
+var box[] fvgBoxes = array.new_box()
+
+// Bullish FVG: Laveste punkt i bar 0 er højere end højeste punkt i bar 2
+isBullishFVG = showFVG and (low[0] > high[2])
+// Bearish FVG: Højeste punkt i bar 0 er lavere end laveste punkt i bar 2
+isBearishFVG = showFVG and (high[0] < low[2])
+
+if isBullishFVG
+    if array.size(fvgBoxes) >= maxFVG
+        box.delete(array.shift(fvgBoxes))
+    b = box.new(
+         left=bar_index[2], top=low[0],
+         right=bar_index + 2, bottom=high[2],
+         bgcolor=colBullFVG, border_color=color.green,
+         text="Bull FVG", text_color=color.green, text_size=size.small
+      )
+    array.push(fvgBoxes, b)
+
+if isBearishFVG
+    if array.size(fvgBoxes) >= maxFVG
+        box.delete(array.shift(fvgBoxes))
+    b = box.new(
+         left=bar_index[2], top=low[2],
+         right=bar_index + 2, bottom=high[0],
+         bgcolor=colBearFVG, border_color=color.red,
+         text="Bear FVG", text_color=color.red, text_size=size.small
+      )
+    array.push(fvgBoxes, b)
+
+// Forlæng ufyldte FVGs og luk dem når prisen lukker hullet (mitigated)
+if array.size(fvgBoxes) > 0
+    for i = array.size(fvgBoxes) - 1 to 0
+        b = array.get(fvgBoxes, i)
+        bTop = box.get_top(b)
+        bBot = box.get_bottom(b)
+        
+        // Fjern FVGs der er for gamle eller mitigated
+        if bar_index - box.get_left(b) > maxFVGAge or (high > bBot and low < bTop)
+            box.delete(b)
+            array.remove(fvgBoxes, i)
+        else
+            box.set_right(b, bar_index + 1)
+
+// ==========================================
+// AMD (AKKUMULERING, MANIPULATION, DISTRIBUTION) LOGIK
+// ==========================================
+inSession(sess) => not na(time(timeframe.period, sess))
+
+isIntraday = timeframe.isintraday
+inAcc = isIntraday and inSession(sessAcc) and showAMD
+inMan = isIntraday and inSession(sessMan) and showAMD
+inDis = isIntraday and inSession(sessDis) and showAMD
+
+// Funktion til at tegne eller opdatere session-bokse
+f_draw_session_box(in_sess, sess_color, sess_label) =>
+    var box b = na
+    var float highVal = na
+    var float lowVal = na
+
+    if in_sess and not in_sess[1] // Session start
+        if not na(b)
+            box.delete(b)
+        highVal := high
+        lowVal  := low
+        b := box.new(left=bar_index, top=highVal, right=bar_index + 1, bottom=lowVal,
+                     bgcolor=sess_color, border_color=color.gray,
+                     text=sess_label, text_color=color.white, text_size=size.small)
+    else if in_sess // Under session
+        highVal := math.max(highVal, high)
+        lowVal  := math.min(lowVal, low)
+        box.set_top(b, highVal)
+        box.set_bottom(b, lowVal)
+        box.set_right(b, bar_index)
+        b
+    else if not na(b) and in_sess[1] // Session just ended — close box at last in-session bar
+        box.set_right(b, bar_index - 1)
+        b
+
+f_draw_session_box(inAcc, colAcc, "Akkumulering")
+f_draw_session_box(inMan, colMan, "Manipulation")
+f_draw_session_box(inDis, colDis, "Distribution")

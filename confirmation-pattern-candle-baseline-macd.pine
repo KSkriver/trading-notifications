@@ -1,0 +1,43 @@
+//@version=6
+indicator("Confirmation Candle Patterns", overlay=true)
+
+// --- INPUTS ---
+useMacdFilter = input.bool(true, "MACD histogram bekræftelse")
+macdFast      = input.int(12,    "MACD fast length",   minval=1)
+macdSlow      = input.int(26,    "MACD slow length",   minval=1)
+macdSignal    = input.int(9,     "MACD signal length", minval=1)
+
+// Hjælpefunktioner til stearinlys
+isBullish(index) => close[index] > open[index]
+isBearish(index) => close[index] < open[index]
+isDoji(index) => math.abs(close[index] - open[index]) <= (high[index] - low[index]) * 0.1
+
+// --- MØNSTRE MOD VENSTRE OG HØJRE (2-CANDLE PATTERNS) ---
+// Bullish Engulfing / Reversal (Rød candle efterfulgt af en stor Grøn candle)
+bullishEngulfing = isBearish(1) and isBullish(0) and close[0] > open[1] and open[0] <= close[1]
+
+// Bearish Engulfing / Reversal (Grøn candle efterfulgt af en stor Rød candle)
+bearishEngulfing = isBullish(1) and isBearish(0) and close[0] < open[1] and open[0] >= close[1]
+
+// --- MØNSTRE TOP OG BUND (3-CANDLE REVERSALS / MORNING & EVENING STAR) ---
+// Bullish 3-Candle Confirmation (Rød -> Doji/Lille candle -> Stor Grøn)
+bullishStar = isBearish(2) and isDoji(1) and isBullish(0) and close[0] > (open[2] + close[2]) / 2
+
+// Bearish 3-Candle Confirmation (Grøn -> Doji/Lille candle -> Stor Rød)
+bearishStar = isBullish(2) and isDoji(1) and isBearish(0) and close[0] < (open[2] + close[2]) / 2
+
+// --- MACD FILTER ---
+[macdLine, signalLine, macdHist] = ta.macd(close, macdFast, macdSlow, macdSignal)
+macdBuyOK  = not useMacdFilter or macdHist < 0  // rød/lys-rød → tillad køb
+macdSellOK = not useMacdFilter or macdHist > 0  // grøn/lys-grøn → tillad salg
+
+// Samlede betingelser
+buySignal  = (bullishEngulfing or bullishStar) and macdBuyOK
+sellSignal = (bearishEngulfing or bearishStar) and macdSellOK
+
+// --- VISNING PÅ DIAGRAMMET ---
+if buySignal
+    label.new(bar_index, low, text="BUY\n" + str.tostring(close, "#.##"), style=label.style_label_up, color=color.green, textcolor=color.white, size=size.small)
+
+if sellSignal
+    label.new(bar_index, high, text="SELL\n" + str.tostring(close, "#.##"), style=label.style_label_down, color=color.red, textcolor=color.white, size=size.small)
